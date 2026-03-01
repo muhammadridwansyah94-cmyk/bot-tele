@@ -1,9 +1,13 @@
 import re
 import asyncio
 import aiohttp
+import json
+import os
 from datetime import datetime
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError, RetryAfter
+from flask import Flask
+import threading
 
 # ------------------ CONFIG ------------------
 APIS = [
@@ -16,6 +20,7 @@ TELEGRAM_BOT_TOKEN = "8629130600:AAGpqRe4ZypN1KwzrAGeHbUO11DuSlqSKJU"
 TELEGRAM_GROUP_ID = -1003541370409
 SMS_DELAY = 0.5
 MAX_RETRY = 5
+PERSIST_FILE = "sent_ids.json"
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
@@ -76,7 +81,18 @@ def format_sms(entry):
     keyboard = [[InlineKeyboardButton("SUPPORT", url="https://t.me/Mangliotp")]]
     return text, InlineKeyboardMarkup(keyboard), masked_phone
 
-# ------------------ SEND SMS WITH AUTO RETRY ------------------
+# ------------------ PERSISTENT SENT IDS ------------------
+def load_sent_ids():
+    if os.path.exists(PERSIST_FILE):
+        with open(PERSIST_FILE, "r") as f:
+            return set(json.load(f))
+    return set()
+
+def save_sent_ids(sent_ids):
+    with open(PERSIST_FILE, "w") as f:
+        json.dump(list(sent_ids), f)
+
+# ------------------ SEND SMS WITH RETRY ------------------
 async def send_sms_async(msg_text, reply_markup, phone):
     attempt = 0
     while attempt < MAX_RETRY:
@@ -87,25 +103,22 @@ async def send_sms_async(msg_text, reply_markup, phone):
                 parse_mode="HTML",
                 reply_markup=reply_markup
             )
-
             print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [✓] SMS terkirim: {phone}")
 
             async def delete_later(message_id):
                 await asyncio.sleep(300)
                 try:
                     await bot.delete_message(TELEGRAM_GROUP_ID, message_id)
-                except TelegramError:
+                except:
                     pass
 
             asyncio.create_task(delete_later(msg.message_id))
             return
-
         except RetryAfter as e:
             await asyncio.sleep(e.retry_after)
         except TelegramError:
             attempt += 1
             await asyncio.sleep(2)
-    # Jika gagal total, tetap diam (tidak log apapun)
 
 # ------------------ FETCH API LOOP ------------------
 async def fetch_api(session, api, sent_sms_ids):
@@ -118,19 +131,33 @@ async def fetch_api(session, api, sent_sms_ids):
                     sms_id = f"{entry['dt']}_{entry['num']}_{entry['cli']}"
                     if sms_id in sent_sms_ids:
                         continue
-                    text, reply_markup, masked_phone = format_sms(entry)
-                    await send_sms_async(text, reply_markup, masked_phone)
+                    text, markup, masked_phone = format_sms(entry)
+                    await send_sms_async(text, markup, masked_phone)
                     sent_sms_ids.add(sms_id)
+                    save_sent_ids(sent_sms_ids)
                     await asyncio.sleep(SMS_DELAY)
         except:
-            await asyncio.sleep(5)  # diam saja jika error, tidak ada log
+            await asyncio.sleep(5)
 
-# ------------------ MAIN LOOP ------------------
+# ------------------ FLASK KEEP-ALIVE ------------------
+app = Flask("KeepAlive")
+
+@app.route("/")
+def home():
+    return "Server is alive!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# ------------------ MAIN ------------------
 async def main_loop():
-    sent_sms_ids = set()
+    sent_sms_ids = load_sent_ids()
     async with aiohttp.ClientSession() as session:
         tasks = [fetch_api(session, api, sent_sms_ids) for api in APIS]
         await asyncio.gather(*tasks)
 
-print("✅ OTP Auto Forwarder Running (Auto Retry + No Error Logs)")
-asyncio.run(main_loop())
+if __name__ == "__main__":
+    # Start Flask keep-alive in background thread
+    threading.Thread(target=run_flask, daemon=True).start()
+    print("✅ OTP Auto Forwarder Running (Persistent + Auto Retry + Keep-Alive)")
+    asyncio.run(main_loop())
