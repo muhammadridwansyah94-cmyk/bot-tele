@@ -139,6 +139,13 @@ async def fetch_api(session, api, sent_sms_ids):
         except:
             await asyncio.sleep(5)
 
+# ------------------ MAIN BOT LOOP ------------------
+async def main_loop():
+    sent_sms_ids = load_sent_ids()
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_api(session, api, sent_sms_ids) for api in APIS]
+        await asyncio.gather(*tasks)
+
 # ------------------ FLASK KEEP-ALIVE ------------------
 app = Flask("KeepAlive")
 
