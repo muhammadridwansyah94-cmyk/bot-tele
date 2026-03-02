@@ -312,7 +312,7 @@ def format_sms(entry):
 📱 Phone: {masked_phone}
 🔑 OTP: {otp}</pre>"""
 
-    keyboard = [[InlineKeyboardButton("SUPPORT", url="https://t.me/Mangliotp")]]
+    keyboard = [[InlineKeyboardButton("NUMBER FILE", url="https://t.me/Mangliotp")]]
     return text, InlineKeyboardMarkup(keyboard), masked_phone
 
 # ------------------ PERSISTENT SENT IDS ------------------
@@ -401,4 +401,5 @@ if __name__ == "__main__":
     # Jalankan bot utama di main thread
     asyncio.run(main_loop())
     flask_thread.join()
+
 
