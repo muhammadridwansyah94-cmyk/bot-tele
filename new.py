@@ -18,7 +18,7 @@ APIS = [
 ]
 
 TELEGRAM_BOT_TOKEN = "8629130600:AAGpqRe4ZypN1KwzrAGeHbUO11DuSlqSKJU"
-ID_GROUP_ID -1003541370409
+TELEGRAM_GROUP_ID = -1003541370409
 SMS_DELAY = 0.5
 MAX_RETRY = 5
 PERSIST_FILE = "sent_ids.json"
@@ -429,4 +429,5 @@ if __name__ == "__main__":
     print("✅ OTP Auto Forwarder Running (Persistent + Auto Retry + Keep-Alive)")
     asyncio.run(main_loop())
     flask_thread.join()
+
 
