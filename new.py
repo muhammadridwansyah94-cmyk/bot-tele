@@ -14,10 +14,11 @@ APIS = [
     {"name": "TIMESMS", "url": "http://147.135.212.197/crapi/time/viewstats", "token": "Q1ZRNEVBYYpeild6RVSTh1SIT1tokHBBYnBWh0VykmhzUIZCclM"},
     {"name": "KONEKTA", "url": "http://51.77.216.195/crapi/konek/viewstats", "token": "RFNSSjRSQodDc2pmeYt5eESLYYhlgodCSHeFV2Joc0OCgWtyhJRj"},
     {"name": "ROXY", "url": "http://51.77.216.195/crapi/rx/viewstats", "token": "RU9RRTRSQmV7YYheVGqTVlNhckJhbJJci4pmU1ZRZWV_hIp3hm6G"},
+    {"name": "Botsms", "url": "http://147.135.212.197/crapi/st/viewstats", "token": "RFdUREJBUzR9T4dVc49ndmFra1NYV5CIhpGVcnaOYmqHhJZXfYGJSQ"},
 ]
 
-TELEGRAM_BOT_TOKEN = "8629130600:AAGpqRe4ZypN1KwzrAGeHbUO11DuSlqSKJU"
-TELEGRAM_GROUP_ID = -1003541370409
+TELEGRAM_BOT_TOKEN = "8726837419:AAFGyBwcsH5uxEPWbTPFnRjKJrVqtAmcw9g"
+TELEGRAM_GROUP_ID = -1003719397490
 SMS_DELAY = 0.5
 MAX_RETRY = 5
 PERSIST_FILE = "sent_ids.json"
@@ -401,5 +402,6 @@ if __name__ == "__main__":
     # Jalankan bot utama di main thread
     asyncio.run(main_loop())
     flask_thread.join()
+
 
 
