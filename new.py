@@ -29,7 +29,7 @@ bot = Bot(token=TELEGRAM_BOT_TOKEN)
 app_logo_map = {"Gojek": "•", "Grab": "•", "Tokopedia": "•", "Shopee": "•", "WhatsApp": "•", "MyApp": "•"}
 
 # ------------------ COUNTRY CODES ------------------
-country_codes = { ... }  # (TIDAK DIUBAH - SAMA PERSIS)
+country_codes = {}  # (TETAP SAMA PERSIS SEPERTI PUNYA KAMU)
 
 # ------------------ HELPERS ------------------
 def mask_phone(phone):
@@ -101,33 +101,38 @@ async def send_sms_async(msg_text, reply_markup, phone):
             attempt += 1
             await asyncio.sleep(2)
 
-# ===================== YANG DIUBAH HANYA DI SINI =====================
+# ===================== FIX STABIL =====================
 async def fetch_api(session, api, sent_sms_ids):
     while True:
         try:
             params = {"token": api["token"], "records": ""}
             async with session.get(api["url"], params=params, timeout=40) as resp:
-                data = await resp.json(content_type=None)
+                
+                raw = await resp.text()
 
-                # FORMAT 1 (3 API LAMA - TIDAK DIUBAH)
+                try:
+                    data = json.loads(raw)
+                except:
+                    await asyncio.sleep(5)
+                    continue
+
+                # FORMAT 1 (3 API LAMA)
                 if isinstance(data, dict) and "data" in data:
                     for entry in sorted(data.get("data", []), key=lambda x: x["dt"]):
                         sms_id = f"{entry['dt']}_{entry['num']}_{entry['cli']}"
                         if sms_id in sent_sms_ids:
                             continue
+
                         text, markup, masked_phone = format_sms(entry)
                         await send_sms_async(text, markup, masked_phone)
                         sent_sms_ids.add(sms_id)
                         save_sent_ids(sent_sms_ids)
                         await asyncio.sleep(SMS_DELAY)
 
-                # FORMAT 2 (KHUSUS BOTSMS)
+                # FORMAT 2 (BOTSMS)
                 elif isinstance(data, list):
                     for row in sorted(data, key=lambda x: x[3]):
-                        cli = row[0]
-                        num = row[1]
-                        message = row[2]
-                        dt = row[3]
+                        cli, num, message, dt = row
 
                         sms_id = f"{dt}_{num}_{cli}"
                         if sms_id in sent_sms_ids:
@@ -146,9 +151,10 @@ async def fetch_api(session, api, sent_sms_ids):
                         save_sent_ids(sent_sms_ids)
                         await asyncio.sleep(SMS_DELAY)
 
-        except:
+        except Exception as e:
+            print("Error di API:", api["name"], "|", e)
             await asyncio.sleep(5)
-# ================================================================
+# ======================================================
 
 async def main_loop():
     sent_sms_ids = load_sent_ids()
