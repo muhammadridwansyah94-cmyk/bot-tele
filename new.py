@@ -409,7 +409,6 @@ async def send_sms_async(msg_text, reply_markup, phone, otp, api_name, sent_sms_
             await asyncio.sleep(2)
 
 # ------------------ FETCH API ------------------
-# ------------------ FETCH API ------------------
 async def fetch_api(session, api, sent_sms_ids):
     while True:
         try:
@@ -427,11 +426,15 @@ async def fetch_api(session, api, sent_sms_ids):
             entries = []
 
             if isinstance(data, dict) and "data" in data:
-                entries = sorted(data.get("data", []), key=lambda x: int(x["dt"]))
+                entries = sorted(
+                    data.get("data", []),
+                    key=lambda x: datetime.strptime(x["dt"], "%Y-%m-%d %H:%M:%S")
+                )
+
             elif isinstance(data, list):
                 entries = sorted(
                     [{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data],
-                    key=lambda x: int(x["dt"])
+                    key=lambda x: datetime.strptime(x["dt"], "%Y-%m-%d %H:%M:%S")
                 )
 
             if not entries:
@@ -439,7 +442,10 @@ async def fetch_api(session, api, sent_sms_ids):
                 continue
 
             for entry in entries:
-                current_dt = int(entry["dt"])
+                current_dt = datetime.strptime(
+                    entry["dt"], "%Y-%m-%d %H:%M:%S"
+                ).timestamp()
+
                 last_dt = last_processed_dt.get(api["name"], 0)
 
                 if current_dt <= last_dt:
@@ -465,6 +471,7 @@ async def fetch_api(session, api, sent_sms_ids):
         except Exception as e:
             print("Error di API:", api["name"], "|", e)
             await asyncio.sleep(5)
+
 
 
 # ------------------ MAIN LOOP ------------------
