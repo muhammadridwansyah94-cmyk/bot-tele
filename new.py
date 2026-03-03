@@ -442,18 +442,52 @@ async def fetch_api(session, api, sent_sms_ids):
             if not entries:
                 await asyncio.sleep(5)
                 continue
-# ===== INIT BASELINE (SUPAYA SMS LAMA TIDAK TERKIRIM) =====
-if not api_initialized.get(api["name"]):
-    latest_dt = datetime.strptime(
-        entries[-1]["dt"], "%Y-%m-%d %H:%M:%S"
-    ).timestamp()
 
-    last_processed_dt[api["name"]] = latest_dt
-    api_initialized[api["name"]] = True
+            # ===== INIT BASELINE (ANTI SMS LAMA) =====
+            if not api_initialized.get(api["name"]):
+                latest_dt = datetime.strptime(
+                    entries[-1]["dt"], "%Y-%m-%d %H:%M:%S"
+                ).timestamp()
 
-    print(f"[INIT] {api['name']} baseline set. Skip old SMS.")
-    await asyncio.sleep(SMS_DELAY)
-    continue
+                last_processed_dt[api["name"]] = latest_dt
+                api_initialized[api["name"]] = True
+
+                print(f"[INIT] {api['name']} baseline set. Skip old SMS.")
+                await asyncio.sleep(SMS_DELAY)
+                continue
+
+            # ===== PROSES SMS BARU =====
+            for entry in entries:
+                current_dt = datetime.strptime(
+                    entry["dt"], "%Y-%m-%d %H:%M:%S"
+                ).timestamp()
+
+                last_dt = last_processed_dt.get(api["name"], 0)
+
+                if current_dt <= last_dt:
+                    continue
+
+                text, markup, masked_phone, otp = format_sms(entry)
+                sms_id = generate_sms_id(entry, otp)
+
+                await send_sms_async(
+                    text,
+                    markup,
+                    masked_phone,
+                    otp,
+                    api["name"],
+                    sent_sms_ids,
+                    sms_id
+                )
+
+                last_processed_dt[api["name"]] = current_dt
+
+            await asyncio.sleep(SMS_DELAY)
+
+        except Exception as e:
+            print("Error di API:", api["name"], "|", e)
+            await asyncio.sleep(5)
+
 
 
             for entry in entries:
