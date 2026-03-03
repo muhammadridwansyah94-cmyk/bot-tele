@@ -411,34 +411,47 @@ async def fetch_api(session, api, sent_sms_ids):
             params = {"token": api["token"], "records": ""}
             async with session.get(api["url"], params=params, timeout=40) as resp:
                 raw = await resp.text()
-                try:
-                    data = json.loads(raw)
-                except:
-                    await asyncio.sleep(5)
-                    continue
 
-                entries = []
-                if isinstance(data, dict) and "data" in data:
-                    entries = sorted(data.get("data", []), key=lambda x: x["dt"])
-                elif isinstance(data, list):
-                    entries = sorted([{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data], key=lambda x: x["dt"])
+            try:
+                data = json.loads(raw)
+            except:
+                await asyncio.sleep(5)
+                continue
 
-                if not entries:
-                    await asyncio.sleep(5)
-                    continue
+            entries = []
+            if isinstance(data, dict) and "data" in data:
+                entries = sorted(data.get("data", []), key=lambda x: x["dt"])
+            elif isinstance(data, list):
+                entries = sorted(
+                    [{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data],
+                    key=lambda x: x["dt"]
+                )
 
-                for entry in entries:
-                    text, markup, masked_phone, otp = format_sms(entry)
-                    sms_id = generate_sms_id(entry, otp)
+            if not entries:
+                await asyncio.sleep(5)
+                continue
 
-    if sms_id not in sent_sms_ids:
-        await send_sms_async(text, markup, masked_phone, otp, api["name"], sent_sms_ids, sms_id)
+            for entry in entries:
+                text, markup, masked_phone, otp = format_sms(entry)
+                sms_id = generate_sms_id(entry, otp)
 
-                await asyncio.sleep(SMS_DELAY)
+                if sms_id not in sent_sms_ids:
+                    await send_sms_async(
+                        text,
+                        markup,
+                        masked_phone,
+                        otp,
+                        api["name"],
+                        sent_sms_ids,
+                        sms_id
+                    )
+
+            await asyncio.sleep(SMS_DELAY)
 
         except Exception as e:
             print("Error di API:", api["name"], "|", e)
             await asyncio.sleep(5)
+
 
 # ------------------ MAIN LOOP ------------------
 async def main_loop():
