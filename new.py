@@ -365,8 +365,10 @@ def save_sent_ids(sent_sms_ids):
 
 # ---------------- ANTI-DUPLICATE ----------------
 def generate_sms_id(entry, otp):
-    key = f"{entry['num']}_{entry['message']}_{entry['dt']}"
+    clean_message = entry['message'].strip()
+    key = f"{entry['num']}_{clean_message}"
     return hashlib.md5(key.encode()).hexdigest()
+
 
 # ------------------ SEND SMS ------------------
 async def send_sms_async(msg_text, reply_markup, phone, otp, api_name, sent_sms_ids, sms_id):
