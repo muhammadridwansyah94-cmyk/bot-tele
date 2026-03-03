@@ -435,26 +435,27 @@ async def fetch_api(session, api, sent_sms_ids):
                 await asyncio.sleep(5)
                 continue
 
-            for entry in entries:
-                current_dt = entry["dt"]
-                last_dt = last_processed_dt.get(api["name"], 0)
-                
-                if current_dt <= last_dt:
-                    continue  # sudah pernah diproses
-                    text, markup, masked_phone, otp = format_sms(entry)
-                    sms_id = generate_sms_id(entry, otp)
-                    
-                    await send_sms_async(
-                        text,
-                        markup,
-                        masked_phone,
-                        otp,
-                        api["name"],
-                        sent_sms_ids,
-                        sms_id
-                    )
-                    
-                    last_processed_dt[api["name"]] = current_dt
+for entry in entries:
+    current_dt = int(entry["dt"])   # <<< TAMBAH int()
+    last_dt = last_processed_dt.get(api["name"], 0)
+
+    if current_dt <= last_dt:
+        continue
+
+    text, markup, masked_phone, otp = format_sms(entry)
+    sms_id = generate_sms_id(entry, otp)
+
+    await send_sms_async(
+        text,
+        markup,
+        masked_phone,
+        otp,
+        api["name"],
+        sent_sms_ids,
+        sms_id
+    )
+
+    last_processed_dt[api["name"]] = current_dt
 
             await asyncio.sleep(SMS_DELAY)
 
