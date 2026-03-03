@@ -282,7 +282,7 @@ country_codes = {
     '995': ('Georgia', '🇬🇪'),
     '996': ('Kyrgyzstan', '🇰🇬'),
     '998': ('Uzbekistan', '🇺🇿'),
-    # ... bisa ditambah sesuai daftar lama
+    # … (isi sesuai sebelumnya)
 }
 
 # ------------------ HELPERS ------------------
@@ -297,11 +297,13 @@ def detect_country(phone):
             return country_codes[code]
     return "Unknown", "🌍"
 
-def detect_language(text):
+def detect_language(message):
     try:
-        lang = detect(text)
-        lang_map = {
-            "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+        lang = detect(message)
+    except:
+        lang = "Unknown"
+    lang_map = {
+        "en": "English", "es": "Spanish", "fr": "French", "de": "German",
             "id": "Indonesian", "pt": "Portuguese", "it": "Italian", "ru": "Russian",
             "ja": "Japanese", "zh-cn": "Chinese", "zh-tw": "Chinese", "hi": "Hindi",
             "ar": "Arabic", "ko": "Korean", "tr": "Turkish", "vi": "Vietnamese",
@@ -313,10 +315,8 @@ def detect_language(text):
             "lv": "Latvian", "lt": "Lithuanian", "bn": "Bengali", "ta": "Tamil",
             "te": "Telugu", "mr": "Marathi", "ur": "Urdu", "fa": "Persian",
             "af": "Afrikaans", "sw": "Swahili", "zu": "Zulu"
-        }
-        return lang_map.get(lang, lang)
-    except:
-        return "Unknown"
+    }
+    return lang_map.get(lang, "Unknown")
 
 def format_sms(entry):
     app = entry["cli"]
@@ -327,21 +327,19 @@ def format_sms(entry):
     masked_phone = mask_phone(phone)
     otp_match = re.search(r'(\d[\d -]{2,12}\d)', message)
     otp = re.sub(r'[^0-9]', '', otp_match.group(1)) if otp_match else "N/A"
+    lang_tag = detect_language(message)
 
     app_logo = app_logo_map.get(app, "•")
     app_line = f"{app_logo}{app}{app_logo}".center(25)
-
-    language_tag = detect_language(message)
-
     text = f"""<pre>
 {app_line}
 🌍 Country: {flag} {country}
 📱 Phone: {masked_phone}
 🔑 OTP: {otp}
-#{language_tag}</pre>"""
+#{lang_tag}</pre>"""
 
     keyboard = [[InlineKeyboardButton("NUMBER FILE", url="https://t.me/Mangliotp")]]
-    return text, InlineKeyboardMarkup(keyboard), masked_phone
+    return text, InlineKeyboardMarkup(keyboard), masked_phone, otp
 
 def load_sent_ids():
     if os.path.exists(PERSIST_FILE):
@@ -353,11 +351,14 @@ def save_sent_ids(sent_ids):
     with open(PERSIST_FILE, "w") as f:
         json.dump(list(sent_ids), f)
 
-# ---------------- SEND ----------------
-async def send_sms_async(msg_text, reply_markup, phone, api_name):
+async def send_sms_async(msg_text, reply_markup, phone, otp, api_name, sent_sms_ids, sms_id):
     attempt = 0
     while attempt < MAX_RETRY:
         try:
+            # cek sebelum kirim
+            if sms_id in sent_sms_ids:
+                return
+
             msg = await bot.send_message(
                 chat_id=TELEGRAM_GROUP_ID,
                 text=msg_text,
@@ -365,7 +366,9 @@ async def send_sms_async(msg_text, reply_markup, phone, api_name):
                 reply_markup=reply_markup
             )
 
-            print(f"[✓] SMS terkirim: {phone} | API: {api_name}")
+            sent_sms_ids.add(sms_id)
+            save_sent_ids(sent_sms_ids)
+            print(f"[✓] SMS terkirim: {phone} | OTP: {otp} | API: {api_name}")
 
             async def delete_later(message_id):
                 await asyncio.sleep(300)
@@ -383,7 +386,6 @@ async def send_sms_async(msg_text, reply_markup, phone, api_name):
             attempt += 1
             await asyncio.sleep(2)
 
-# ---------------- FETCH ----------------
 async def fetch_api(session, api, sent_sms_ids):
     while True:
         try:
@@ -400,22 +402,17 @@ async def fetch_api(session, api, sent_sms_ids):
                 if isinstance(data, dict) and "data" in data:
                     entries = sorted(data.get("data", []), key=lambda x: x["dt"])
                 elif isinstance(data, list):
-                    entries = sorted(
-                        [{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data],
-                        key=lambda x: x["dt"]
-                    )
+                    entries = sorted([{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data], key=lambda x: x["dt"])
+
                 if not entries:
                     await asyncio.sleep(5)
                     continue
 
-                # Hanya kirim sms baru
+                # Hanya SMS baru setelah start
                 latest = entries[-1]
-                sms_id = f"{latest['dt']}_{latest['num']}_{latest['cli']}"
-                if sms_id not in sent_sms_ids:
-                    text, markup, masked_phone = format_sms(latest)
-                    await send_sms_async(text, markup, masked_phone, api["name"])
-                    sent_sms_ids.add(sms_id)
-                    save_sent_ids(sent_sms_ids)
+                text, markup, masked_phone, otp = format_sms(latest)
+                sms_id = f"{latest['dt']}_{latest['num']}_{latest['cli']}_{otp}"
+                await send_sms_async(text, markup, masked_phone, otp, api["name"], sent_sms_ids, sms_id)
 
                 await asyncio.sleep(SMS_DELAY)
 
@@ -423,7 +420,6 @@ async def fetch_api(session, api, sent_sms_ids):
             print("Error di API:", api["name"], "|", e)
             await asyncio.sleep(5)
 
-# ---------------- MAIN LOOP ----------------
 async def main_loop():
     sent_sms_ids = load_sent_ids()
     async with aiohttp.ClientSession() as session:
@@ -432,6 +428,7 @@ async def main_loop():
 
 # ---------------- KEEP ALIVE ----------------
 app = Flask("KeepAlive")
+
 @app.route("/")
 def home():
     return "Server is alive!"
@@ -443,6 +440,7 @@ def run_flask():
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
-    print("✅ OTP Auto Forwarder Running (Only New SMS, No Duplicate)")
+
+    print("✅ OTP Auto Forwarder Running (No Double, New Only, Language Tag)")
     asyncio.run(main_loop())
     flask_thread.join()
