@@ -427,11 +427,13 @@ async def fetch_api(session, api, sent_sms_ids):
                     await asyncio.sleep(5)
                     continue
 
-                latest = entries[-1]
-                text, markup, masked_phone, otp = format_sms(latest)
-                sms_id = generate_sms_id(latest, otp)
+                for entry in entries:
+    text, markup, masked_phone, otp = format_sms(entry)
+    sms_id = generate_sms_id(entry, otp)
 
-                await send_sms_async(text, markup, masked_phone, otp, api["name"], sent_sms_ids, sms_id)
+    if sms_id not in sent_sms_ids:
+        await send_sms_async(text, markup, masked_phone, otp, api["name"], sent_sms_ids, sms_id)
+
                 await asyncio.sleep(SMS_DELAY)
 
         except Exception as e:
