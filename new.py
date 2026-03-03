@@ -26,6 +26,8 @@ MAX_RETRY = 5
 PERSIST_FILE = "sent_ids.json"
 CLEANUP_HOURS = 24  # Hapus hash lebih dari 24 jam
 last_processed_dt = {}
+api_initialized = {}
+
 
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -440,6 +442,19 @@ async def fetch_api(session, api, sent_sms_ids):
             if not entries:
                 await asyncio.sleep(5)
                 continue
+# ===== INIT BASELINE (SUPAYA SMS LAMA TIDAK TERKIRIM) =====
+if not api_initialized.get(api["name"]):
+    latest_dt = datetime.strptime(
+        entries[-1]["dt"], "%Y-%m-%d %H:%M:%S"
+    ).timestamp()
+
+    last_processed_dt[api["name"]] = latest_dt
+    api_initialized[api["name"]] = True
+
+    print(f"[INIT] {api['name']} baseline set. Skip old SMS.")
+    await asyncio.sleep(SMS_DELAY)
+    continue
+
 
             for entry in entries:
                 current_dt = datetime.strptime(
