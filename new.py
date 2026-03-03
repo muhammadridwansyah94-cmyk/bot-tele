@@ -4,6 +4,7 @@ import aiohttp
 import json
 import os
 from datetime import datetime
+from hashlib import sha256
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError, RetryAfter
 from flask import Flask
@@ -21,15 +22,19 @@ TELEGRAM_BOT_TOKEN = "8629130600:AAGpqRe4ZypN1KwzrAGeHbUO11DuSlqSKJU"
 TELEGRAM_GROUP_ID = -1003541370409
 SMS_DELAY = 0.5
 MAX_RETRY = 5
-SENT_FILE = "sent_ids.json"
-LAST_FILE = "last_sms.json"
+PERSIST_FILE = "sent_ids.json"
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+# ================= START FILTER =================
+first_fetch_done = {}
+# ================================================
 
 # ------------------ APP LOGO ------------------
 app_logo_map = {"Gojek": "•", "Grab": "•", "Tokopedia": "•", "Shopee": "•", "WhatsApp": "•", "MyApp": "•"}
 
 # ------------------ COUNTRY CODES ------------------
+# (PASTE KAMU PERSIS, TIDAK DIUBAH)
 country_codes = { '1': ('USA/Canada (NANP)', '🇺🇸'),
     '1242': ('Bahamas', '🇧🇸'),
     '1246': ('Barbados', '🇧🇧'),
@@ -280,8 +285,7 @@ country_codes = { '1': ('USA/Canada (NANP)', '🇺🇸'),
     '994': ('Azerbaijan', '🇦🇿'),
     '995': ('Georgia', '🇬🇪'),
     '996': ('Kyrgyzstan', '🇰🇬'),
-    '998': ('Uzbekistan', '🇺🇿'),
-}
+    '998': ('Uzbekistan', '🇺🇿'), }  # tetap sama seperti script sebelumnya
 
 # ------------------ HELPERS ------------------
 def mask_phone(phone):
@@ -317,26 +321,16 @@ def format_sms(entry):
     return text, InlineKeyboardMarkup(keyboard), masked_phone
 
 def load_sent_ids():
-    if os.path.exists(SENT_FILE):
-        with open(SENT_FILE, "r") as f:
+    if os.path.exists(PERSIST_FILE):
+        with open(PERSIST_FILE, "r") as f:
             return set(json.load(f))
     return set()
 
 def save_sent_ids(sent_ids):
-    with open(SENT_FILE, "w") as f:
+    with open(PERSIST_FILE, "w") as f:
         json.dump(list(sent_ids), f)
 
-def load_last_ids():
-    if os.path.exists(LAST_FILE):
-        with open(LAST_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_last_ids(last_ids):
-    with open(LAST_FILE, "w") as f:
-        json.dump(last_ids, f)
-
-# ------------------ SEND ------------------
+# ================== TAMBAH API NAME DI SINI ==================
 async def send_sms_async(msg_text, reply_markup, phone, api_name):
     attempt = 0
     while attempt < MAX_RETRY:
@@ -347,6 +341,7 @@ async def send_sms_async(msg_text, reply_markup, phone, api_name):
                 parse_mode="HTML",
                 reply_markup=reply_markup
             )
+
             print(f"[✓] SMS terkirim: {phone} | API: {api_name}")
 
             async def delete_later(message_id):
@@ -365,10 +360,12 @@ async def send_sms_async(msg_text, reply_markup, phone, api_name):
             attempt += 1
             await asyncio.sleep(2)
 
-# ------------------ FETCH ------------------
-async def fetch_api(session, api, sent_sms_ids, last_ids):
-    api_name = api["name"]
-    last_id = last_ids.get(api_name)
+# ===================== FETCH =====================
+async def fetch_api(session, api, sent_sms_ids):
+    global first_fetch_done
+
+    if api["name"] not in first_fetch_done:
+        first_fetch_done[api["name"]] = False
 
     while True:
         try:
@@ -383,8 +380,10 @@ async def fetch_api(session, api, sent_sms_ids, last_ids):
                     continue
 
                 entries = []
+
                 if isinstance(data, dict) and "data" in data:
                     entries = sorted(data.get("data", []), key=lambda x: x["dt"])
+
                 elif isinstance(data, list):
                     entries = sorted(
                         [{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data],
@@ -395,37 +394,48 @@ async def fetch_api(session, api, sent_sms_ids, last_ids):
                     await asyncio.sleep(5)
                     continue
 
-                # Hanya ambil SMS baru
-                new_entries = []
+                # FIRST START → 1 SMS
+                if not first_fetch_done[api["name"]]:
+                    latest = entries[-1]
+                    if api["name"] == "Botsms":
+                        sms_id = sha256((latest['cli'] + latest['num'] + latest['message']).encode()).hexdigest()
+                    else:
+                        sms_id = f"{latest['dt']}_{latest['num']}_{latest['cli']}"
+
+                    if sms_id not in sent_sms_ids:
+                        text, markup, masked_phone = format_sms(latest)
+                        await send_sms_async(text, markup, masked_phone, api["name"])
+                        sent_sms_ids.add(sms_id)
+                        save_sent_ids(sent_sms_ids)
+
+                    first_fetch_done[api["name"]] = True
+                    await asyncio.sleep(5)
+                    continue
+
+                # OTP BARU SAJA
                 for entry in entries:
-                    sms_id = f"{entry['dt']}_{entry['num']}_{entry['cli']}"
-                    if sms_id == last_id:
-                        break
-                    new_entries.append(entry)
+                    if api["name"] == "Botsms":
+                        sms_id = sha256((entry['cli'] + entry['num'] + entry['message']).encode()).hexdigest()
+                    else:
+                        sms_id = f"{entry['dt']}_{entry['num']}_{entry['cli']}"
 
-                new_entries = new_entries[-1:]  # Kirim hanya 1 terakhir jika banyak baru
-
-                for entry in new_entries:
-                    sms_id = f"{entry['dt']}_{entry['num']}_{entry['cli']}"
                     if sms_id in sent_sms_ids:
                         continue
+
                     text, markup, masked_phone = format_sms(entry)
-                    await send_sms_async(text, markup, masked_phone, api_name)
+                    await send_sms_async(text, markup, masked_phone, api["name"])
                     sent_sms_ids.add(sms_id)
                     save_sent_ids(sent_sms_ids)
-                    last_ids[api_name] = sms_id
-                    save_last_ids(last_ids)
                     await asyncio.sleep(SMS_DELAY)
 
         except Exception as e:
-            print("Error di API:", api_name, "|", e)
+            print("Error di API:", api["name"], "|", e)
             await asyncio.sleep(5)
 
 async def main_loop():
     sent_sms_ids = load_sent_ids()
-    last_ids = load_last_ids()
     async with aiohttp.ClientSession() as session:
-        tasks = [fetch_api(session, api, sent_sms_ids, last_ids) for api in APIS]
+        tasks = [fetch_api(session, api, sent_sms_ids) for api in APIS]
         await asyncio.gather(*tasks)
 
 # ---------------- KEEP ALIVE ----------------
@@ -442,6 +452,7 @@ def run_flask():
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
-    print("✅ OTP Auto Forwarder Running (Final Version)")
+
+    print("✅ OTP Auto Forwarder Running (Botsms Hash Active)")
     asyncio.run(main_loop())
     flask_thread.join()
