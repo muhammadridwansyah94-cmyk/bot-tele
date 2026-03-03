@@ -25,6 +25,8 @@ SMS_DELAY = 0.5
 MAX_RETRY = 5
 PERSIST_FILE = "sent_ids.json"
 CLEANUP_HOURS = 24  # Hapus hash lebih dari 24 jam
+last_processed_dt = {}
+
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
@@ -434,10 +436,14 @@ async def fetch_api(session, api, sent_sms_ids):
                 continue
 
             for entry in entries:
-                text, markup, masked_phone, otp = format_sms(entry)
-                sms_id = generate_sms_id(entry, otp)
-
-                if sms_id not in sent_sms_ids:
+                current_dt = entry["dt"]
+                last_dt = last_processed_dt.get(api["name"], 0)
+                
+                if current_dt <= last_dt:
+                    continue  # sudah pernah diproses
+                    text, markup, masked_phone, otp = format_sms(entry)
+                    sms_id = generate_sms_id(entry, otp)
+                    
                     await send_sms_async(
                         text,
                         markup,
@@ -447,6 +453,8 @@ async def fetch_api(session, api, sent_sms_ids):
                         sent_sms_ids,
                         sms_id
                     )
+                    
+                    last_processed_dt[api["name"]] = current_dt
 
             await asyncio.sleep(SMS_DELAY)
 
