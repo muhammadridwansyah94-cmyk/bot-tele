@@ -538,6 +538,69 @@ async def fetch_api(session, api, sent_sms_ids):
                 await send_sms_async(
                     text,
                     markup,
+# ------------------ FETCH API ------------------
+async def fetch_api(session, api, sent_sms_ids):
+    while True:
+        try:
+            params = {"token": api["token"], "records": ""}
+
+            async with session.get(api["url"], params=params, timeout=40) as resp:
+                raw = await resp.text()
+
+            try:
+                data = json.loads(raw)
+            except:
+                await asyncio.sleep(5)
+                continue
+
+            entries = []
+
+            if isinstance(data, dict) and "data" in data:
+                entries = data.get("data", [])
+
+            elif isinstance(data, list):
+                entries = [
+                    {"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]}
+                    for r in data
+                ]
+
+            if not entries:
+                await asyncio.sleep(5)
+                continue
+
+            # SORT BERDASARKAN WAKTU
+            entries.sort(key=lambda x: x["dt"])
+
+            # INIT BASELINE (SUPAYA SMS LAMA TIDAK TERKIRIM)
+            if not api_initialized.get(api["name"]):
+                last_processed_dt[api["name"]] = entries[-1]["dt"]
+                api_initialized[api["name"]] = True
+                print(f"[INIT] {api['name']} baseline set.")
+                await asyncio.sleep(SMS_DELAY)
+                continue
+
+            # PROSES SMS BARU SAJA
+            for entry in entries:
+                current_dt = entry["dt"]
+                last_dt = last_processed_dt.get(api["name"])
+
+                if current_dt <= last_dt:
+                    continue
+
+                text, markup, masked_phone, otp = format_sms(entry)
+                sms_id = generate_sms_id(entry, otp)
+
+                if sms_id in sent_sms_ids:
+                    continue
+
+                # update sebelum kirim (anti double)
+                last_processed_dt[api["name"]] = current_dt
+                sent_sms_ids[sms_id] = datetime.utcnow().timestamp()
+                save_sent_ids(sent_sms_ids)
+
+                await send_sms_async(
+                    text,
+                    markup,
                     masked_phone,
                     otp,
                     api["name"],
