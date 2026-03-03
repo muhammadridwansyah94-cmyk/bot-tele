@@ -410,9 +410,11 @@ async def send_sms_async(msg_text, reply_markup, phone, otp, api_name, sent_sms_
 
 # ------------------ FETCH API ------------------
 async def fetch_api(session, api, sent_sms_ids):
+async def fetch_api(session, api, sent_sms_ids):
     while True:
         try:
             params = {"token": api["token"], "records": ""}
+
             async with session.get(api["url"], params=params, timeout=40) as resp:
                 raw = await resp.text()
 
@@ -423,16 +425,47 @@ async def fetch_api(session, api, sent_sms_ids):
                 continue
 
             entries = []
+
             if isinstance(data, dict) and "data" in data:
-                entries = sorted(data.get("data", []), key=lambda x: x["dt"])
+                entries = sorted(data.get("data", []), key=lambda x: int(x["dt"]))
             elif isinstance(data, list):
                 entries = sorted(
                     [{"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]} for r in data],
-                    key=lambda x: x["dt"]
+                    key=lambda x: int(x["dt"])
                 )
 
             if not entries:
                 await asyncio.sleep(5)
+                continue
+
+            for entry in entries:
+                current_dt = int(entry["dt"])
+                last_dt = last_processed_dt.get(api["name"], 0)
+
+                if current_dt <= last_dt:
+                    continue
+
+                text, markup, masked_phone, otp = format_sms(entry)
+                sms_id = generate_sms_id(entry, otp)
+
+                await send_sms_async(
+                    text,
+                    markup,
+                    masked_phone,
+                    otp,
+                    api["name"],
+                    sent_sms_ids,
+                    sms_id
+                )
+
+                last_processed_dt[api["name"]] = current_dt
+
+            await asyncio.sleep(SMS_DELAY)
+
+        except Exception as e:
+            print("Error di API:", api["name"], "|", e)
+            await asyncio.sleep(5)
+
                 continue
 
 for entry in entries:
