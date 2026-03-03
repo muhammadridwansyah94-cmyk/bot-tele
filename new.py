@@ -365,7 +365,7 @@ def save_sent_ids(sent_sms_ids):
 
 # ---------------- ANTI-DUPLICATE ----------------
 def generate_sms_id(entry, otp):
-    key = f"{entry['num']}_{otp}"
+    key = f"{entry['num']}_{entry['message']}_{entry['dt']}"
     return hashlib.md5(key.encode()).hexdigest()
 
 # ------------------ SEND SMS ------------------
