@@ -1,13 +1,6 @@
-# Telegram bot library
 python-telegram-bot==20.4
-
-# Async HTTP requests
-aiohttp==3.8.5
-
-# Language detection
+aiohttp==3.8.4
 langdetect==1.0.9
-
-# Upgrade build tools supaya Railway bisa compile package besar
 setuptools>=67.8.0
 wheel>=0.40.0
 pip>=23.2.1
