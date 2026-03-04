@@ -411,81 +411,86 @@ async def send_sms_async(msg_text, reply_markup, phone, otp, api_name, sent_sms_
             await asyncio.sleep(2)
 
 # ------------------ FETCH API ------------------
+SMS_DELAY = 8  # polling lebih cepat dari bot 40 detik
+
+api_initialized = {}
+
 async def fetch_api(session, api, sent_sms_ids):
-    while True:
+    try:
+        async with session.get(api["url"], timeout=15) as response:
+            if response.status != 200:
+                print(f"Error API {api['name']}: Status {response.status}")
+                return
+
+            data = await response.json()
+
+    except Exception as e:
+        print(f"Error di API: {api['name']} | {e}")
+        return
+
+    if not isinstance(data, list):
+        return
+
+    # Ambil maksimal 5 terbaru biar ringan
+    entries = sorted(
+        data,
+        key=lambda x: x.get("id", 0),
+        reverse=True
+    )[:5]
+
+    # MODE FIRST RUN → JANGAN KIRIM SMS LAMA
+    if not api_initialized.get(api["name"]):
+        for entry in entries:
+            sms_id = str(entry.get("id"))
+            sent_sms_ids.add(sms_id)
+        api_initialized[api["name"]] = True
+        print(f"{api['name']} initialized (skip old messages)")
+        return
+
+    for entry in entries:
+        sms_id = str(entry.get("id"))
+
+        # Sudah pernah dikirim
+        if sms_id in sent_sms_ids:
+            continue
+
+        masked_phone = entry.get("phone", "Unknown")
+        otp = entry.get("otp", "Unknown")
+        country = entry.get("country", "Unknown")
+        service = entry.get("service", "Unknown")
+        language = entry.get("language", "Unknown")
+
+        text = f"""
+MangliOTP:
+
+        •{service}•       
+🌍 Country: {country}
+📱 Phone: {masked_phone}
+🔑 OTP: {otp}
+#{language}
+"""
+
         try:
-            params = {"token": api["token"], "records": ""}
+            await send_sms_async(
+                text,
+                None,
+                masked_phone,
+                otp,
+                api["name"],
+                sent_sms_ids,
+                sms_id
+            )
 
-            async with session.get(api["url"], params=params, timeout=40) as resp:
-                raw = await resp.text()
+            sent_sms_ids.add(sms_id)
 
-            try:
-                data = json.loads(raw)
-            except:
-                await asyncio.sleep(5)
-                continue
-
-            entries = []
-
-            if isinstance(data, dict) and "data" in data:
-                entries = data.get("data", [])
-
-            elif isinstance(data, list):
-                entries = [
-                    {"cli": r[0], "num": r[1], "message": r[2], "dt": r[3]}
-                    for r in data
-                ]
-
-            if not entries:
-                await asyncio.sleep(5)
-                continue
-
-            # SORT BERDASARKAN WAKTU
-            entries.sort(key=lambda x: x["dt"])
-
-            # INIT BASELINE (SUPAYA SMS LAMA TIDAK TERKIRIM)
-            if not api_initialized.get(api["name"]):
-                last_processed_dt[api["name"]] = entries[-1]["dt"]
-                api_initialized[api["name"]] = True
-                print(f"[INIT] {api['name']} baseline set.")
-                await asyncio.sleep(SMS_DELAY)
-                continue
-
-            # PROSES SMS BARU SAJA
-            for entry in entries:
-                current_dt = entry["dt"]
-                last_dt = last_processed_dt.get(api["name"])
-
-                if current_dt <= last_dt:
-                    continue
-
-                text, markup, masked_phone, otp = format_sms(entry)
-                sms_id = generate_sms_id(entry, otp)
-
-                if sms_id in sent_sms_ids:
-                    continue
-
-                # update sebelum kirim (anti double)
-                last_processed_dt[api["name"]] = current_dt
-                sent_sms_ids[sms_id] = datetime.utcnow().timestamp()
-                save_sent_ids(sent_sms_ids)
-
-                await send_sms_async(
-                    text,
-                    markup,
-                    masked_phone,
-                    otp,
-                    api["name"],
-                    sent_sms_ids,
-                    sms_id
-                )
-
-            await asyncio.sleep(SMS_DELAY)
+            # 🔥 PAUSE BIAR BOT TEMAN SEMPAT AMBIL
+            await asyncio.sleep(12)
 
         except Exception as e:
-            print("Error di API:", api["name"], "|", e)
-            await asyncio.sleep(5)
+            print(f"Gagal kirim Telegram: {e}")
 
+    # Delay polling
+    await asyncio.sleep(SMS_DELAY)
 
 
 
